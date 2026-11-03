@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { answerWithRag } from '../server/rag.mjs';
-import { conversationalReply } from '../public/conversation.mjs';
+import { answerToCaseQuestion, conversationalReply, openingUseCaseQuestion } from '../public/conversation.mjs';
+import { inferProfile } from '../public/engine.mjs';
 
 test('greetings use Gemini as conversation without PET citations', async () => {
   assert.match(conversationalReply('hello!'), /^Hi!/);
@@ -28,7 +29,7 @@ test('asking the chatbot its name never retrieves name-matched pilot reports', a
 });
 
 test('an underspecified data-sharing use case asks for purpose without a pilot citation', async () => {
-  const model = recordingModel(() => [{ text: 'I can help. What will the recipient do with the data after you share it?', source_ids: [] }]);
+  const model = recordingModel(() => [{ text: 'I can help with the sharing plan.', source_ids: [] }]);
   for (const message of [
     'I have a set of data I want to share with the DC department of education. What PET should I use?',
     "Hello! I'm working with the New York Department of Education and I'd like to share some information securely. Could you help?"
@@ -36,7 +37,9 @@ test('an underspecified data-sharing use case asks for purpose without a pilot c
     const response = await answerWithRag({ message, intent: 'learn' }, { apiKey: 'test-key', fetchImpl: model.fetchImpl });
     assert.equal(response.status, 'chat', message);
     assert.deepEqual(response.sources, []);
-    assert.match(response.segments[0].text, /What will the recipient do/);
+    assert.equal(response.followup.field, 'goal');
+    assert.equal(response.followup.text, 'What are you trying to do?');
+    assert.doesNotMatch(response.segments[0].text, /\?/);
   }
 });
 
@@ -48,8 +51,52 @@ test('intake rejects a model answer that parrots a prior pilot', async () => {
     fetchImpl: async () => modelReply([{ text: 'The DC ETEP pilot used PSI. Want to use that?', source_ids: [] }])
   });
   assert.equal(response.status, 'chat');
-  assert.match(response.segments[0].text, /What are you trying to do/);
+  assert.equal(response.followup.field, 'goal');
+  assert.equal(response.segments[0].text, 'I can help with that.');
   assert.deepEqual(response.sources, []);
+});
+
+test('case intake asks one question and advances past an answered field', async () => {
+  const visitorMessage = 'aggregate results. I want it to be as secure as possible.';
+  assert.equal(openingUseCaseQuestion(visitorMessage, inferProfile(visitorMessage))?.field, 'holders');
+  const model = recordingModel(() => [{ text: 'I can help narrow the options.', source_ids: [] }]);
+  const profile = { goal: 'statistics', output: 'aggregate' };
+  const first = await answerWithRag({
+    message: 'We want secure aggregate results.', intent: 'choose', profile
+  }, { apiKey: 'test-key', fetchImpl: model.fetchImpl });
+  assert.equal(first.status, 'chat');
+  assert.equal(first.followup.field, 'holders');
+  assert.equal(first.segments[0].text.includes('?'), false);
+  assert.equal(answerToCaseQuestion(first.followup, 'Three or more'), 'many');
+  assert.equal(answerToCaseQuestion(first.followup, 'There are 3 or more organizations'), 'many');
+
+  const second = await answerWithRag({
+    message: 'Three or more', intent: 'choose', profile: { ...profile, holders: 'many' },
+    context: [{ role: 'assistant', text: `${first.segments[0].text} ${first.followup.text}` }]
+  }, { apiKey: 'test-key', fetchImpl: model.fetchImpl });
+  assert.equal(second.status, 'chat');
+  assert.equal(second.followup.field, 'sensitivity');
+  assert.notEqual(second.followup.field, first.followup.field);
+  assert.equal(answerToCaseQuestion(second.followup, 'Already public'), 'public');
+  assert.equal(answerToCaseQuestion(second.followup, 'The records are internal but not protected'), 'internal');
+});
+
+test('completed core case facts reach grounded advice without re-asking intake', async () => {
+  const profile = { goal: 'statistics', output: 'aggregate', holders: 'many', sensitivity: 'internal', rawMove: 'no' };
+  assert.equal(openingUseCaseQuestion('We want aggregate results', profile, [{ role: 'assistant', text: 'What are you trying to do?' }]), null);
+  const model = recordingModel(ids => [{ text: 'Differential privacy can help limit disclosure in aggregate releases.', source_ids: [ids[0]] }]);
+  const response = await answerWithRag({ message: 'We want secure aggregate results.', intent: 'choose', profile },
+    { apiKey: 'test-key', fetchImpl: model.fetchImpl });
+  assert.equal(response.status, 'ok');
+  assert.equal(response.followup, undefined);
+});
+
+test('grounded case advice cannot add a second model-generated question', async () => {
+  const profile = { goal: 'statistics', output: 'aggregate', holders: 'many', sensitivity: 'internal', rawMove: 'no' };
+  const model = recordingModel(ids => [{ text: 'Consider differential privacy. Will analyses repeat over time?', source_ids: [ids[0]] }]);
+  const response = await answerWithRag({ message: 'We want secure aggregate results.', intent: 'choose', profile },
+    { apiKey: 'test-key', fetchImpl: model.fetchImpl });
+  assert.equal(response.status, 'unavailable');
 });
 
 function modelReply(segments) {

@@ -1,6 +1,6 @@
 import { FIELDS, assessCase, cleanProfile, inferProfile, nextQuestion, profileLabel } from './engine.mjs';
 import { createIndex, retrieve, evidenceFor } from './retrieval.mjs';
-import { conversationalReply, openingUseCaseQuestion } from './conversation.mjs';
+import { answerToCaseQuestion, conversationalReply, openingUseCaseQuestion } from './conversation.mjs';
 import { clearHistory, loadHistory, saveHistory } from './history.mjs';
 import { matchingWords, sourceNoteExcerpt } from './evidence-notes.mjs';
 
@@ -66,7 +66,8 @@ function saveCurrentChat() {
     messages: state.transcript.slice(-80),
     profile: cleanProfile(state.profile),
     mode: state.mode,
-    lastTopicQuery: state.lastTopicQuery
+    lastTopicQuery: state.lastTopicQuery,
+    pendingField: state.pendingQuestion?.field || ''
   };
   history.chats = [chat, ...history.chats.filter(item => item.id !== chat.id)].slice(0, 30);
   history.activeId = state.chatId;
@@ -86,7 +87,9 @@ function openSavedChat(id) {
   state.transcript = chat.messages.map(message => ({ ...message, sources: message.sources || [] }));
   state.mode = chat.mode;
   state.lastTopicQuery = chat.lastTopicQuery;
-  state.pendingQuestion = nextQuestion(assessCase(state.profile));
+  state.pendingQuestion = Object.hasOwn(FIELDS, chat.pendingField) && !state.profile[chat.pendingField]
+    ? { field: chat.pendingField, text: FIELDS[chat.pendingField].label }
+    : nextQuestion(assessCase(state.profile));
   state.evidence = [];
   messages.replaceChildren();
   let lastQuestion = '';
@@ -225,7 +228,10 @@ function checkedModelAnswer(payload) {
     if (payload.sources.length || payload.segments.some(segment =>
       typeof segment?.text !== 'string' || !segment.text.trim() || segment.text.length > 2200 ||
       !Array.isArray(segment.source_ids) || segment.source_ids.length)) return null;
-    return { kind: 'chat', segments: payload.segments.map(segment => ({ text: segment.text.trim(), docs: [] })), hits: [] };
+    const followup = payload.followup;
+    if (followup && (!Object.hasOwn(FIELDS, followup.field) || followup.text !== FIELDS[followup.field].label ||
+      payload.segments.some(segment => segment.text.includes('?')))) return null;
+    return { kind: 'chat', segments: payload.segments.map(segment => ({ text: segment.text.trim(), docs: [] })), hits: [], followup };
   }
   const publicDocs = new Map(state.index.docs.map(doc => [doc.id, doc]));
   const supplied = new Map();
@@ -266,10 +272,11 @@ function citedParagraphs(model) {
 
 function modelMessage(model, title = '', query = '') {
   state.evidence = model.hits;
-  state.pendingQuestion = null;
+  state.pendingQuestion = model.followup || null;
   const answer = el('div', 'answer');
   if (title) answer.append(el('h2', 'answer-title', title));
   answer.append(citedParagraphs(model));
+  if (model.followup) answer.append(followupQuestion(model.followup));
   if (model.hits.length) answer.append(sourceDetails(model.hits, null, query));
   return answer;
 }
@@ -295,7 +302,7 @@ async function requestModel(intent, query) {
     const payload = await response.json();
     if (payload?.status === 'review') return { review: true };
     if (payload?.status === 'unavailable') return { unavailable: true };
-  if (payload?.status === 'insufficient') return null;
+    if (payload?.status === 'insufficient') return null;
     return checkedModelAnswer(payload) || { unavailable: true };
   } catch {
     return { unavailable: true };
@@ -461,7 +468,10 @@ function showRecommendation(query) {
   if (intake) {
     void modelTurn('choose', query, () => {
       state.evidence = [];
-      return el('div', 'answer', `I can help. ${intake}`);
+      state.pendingQuestion = intake;
+      const answer = el('div', 'answer');
+      answer.append(el('p', '', 'I can help with that.'), followupQuestion(intake));
+      return answer;
     });
     return;
   }
@@ -477,7 +487,10 @@ function learningMessage(query, retrievalQuery = query) {
   const intake = openingUseCaseQuestion(query, state.profile, state.transcript.slice(0, -1));
   if (intake) {
     state.evidence = [];
-    return el('div', 'answer', `I can help. ${intake}`);
+    state.pendingQuestion = intake;
+    const answer = el('div', 'answer');
+    answer.append(el('p', '', 'I can help with that.'), followupQuestion(intake));
+    return answer;
   }
   let hits = retrieve(state.index, retrievalQuery, { limit: 12 });
   if (/^\s*(what is|what are|define|explain)\b/i.test(query)) {
@@ -580,20 +593,6 @@ function classify(text, inferred) {
   return 'learn';
 }
 
-function answerToPending(text) {
-  const field = state.pendingQuestion?.field;
-  if (!field) return null;
-  const answer = text.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim();
-  const options = FIELDS[field].options;
-  const exact = options.find(([value, label]) => answer === value || answer === label.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').trim());
-  if (exact) return exact[0];
-  if (/^(yes|no|not sure|unknown)\b/.test(answer)) {
-    const value = answer.startsWith('not sure') || answer.startsWith('unknown') ? 'unknown' : answer.startsWith('yes') ? 'yes' : 'no';
-    if (options.some(([option]) => option === value)) return value;
-  }
-  return null;
-}
-
 function send(text) {
   const query = text.trim().slice(0, 1200);
   if (!query || state.sourceStatus !== 'ready' || state.busy) return false;
@@ -601,15 +600,16 @@ function send(text) {
   if (/\b(?:won't|will not|do not|never|no plans? to)\b.{0,35}\b(?:publish|release|share)\b.{0,60}\b(?:names?|identifiers?|pii)\b/i.test(query)) inferred.directRelease = 'no';
   const newCase = startsNewCase(query) || Boolean(inferred.goal && state.profile.goal && inferred.goal !== state.profile.goal && !isCaseContinuation(query));
   if (newCase) reset();
-  const pendingAnswer = newCase ? null : answerToPending(query);
-  addMessage('user', query);
+  const pendingAnswer = newCase ? null : answerToCaseQuestion(state.pendingQuestion, query);
   const followup = Boolean(state.mode === 'learn' && state.lastTopicQuery && !inferred.goal && isTopicFollowup(query));
   const intent = pendingAnswer ? 'choose' : isLegalQuestion(query) ? 'legal' : followup ? 'learn' : classify(query, inferred);
   if (intent === 'choose' || intent === 'plan') {
     state.profile = { ...state.profile, ...inferred };
     if (pendingAnswer) state.profile[state.pendingQuestion.field] = pendingAnswer;
   }
+  if (pendingAnswer) state.pendingQuestion = null;
   state.mode = intent;
+  addMessage('user', query);
   if (intent === 'legal') addMessage('assistant', legalMessage(query));
   else if (intent === 'plan') {
     const assessment = assessCase(state.profile);

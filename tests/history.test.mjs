@@ -12,7 +12,7 @@ test('chat history survives a reload and can be cleared locally', () => {
   const storage = memoryStorage();
   assert.equal(saveHistory(storage, { activeId: 'one', chats: [{
     id: 'one', title: 'Link records', updatedAt: '2026-11-03T00:00:00Z', profile: { goal: 'link' },
-    mode: 'choose', lastTopicQuery: 'Link records', messages: [
+    mode: 'choose', lastTopicQuery: 'Link records', pendingField: 'holders', messages: [
       { role: 'user', text: 'Link records', sources: [] },
       { role: 'assistant', text: 'Consider PPRL.', sources: [{ id: 'nih-pprl-fuzzy', url: 'https://example.org' }] }
     ]
@@ -20,6 +20,7 @@ test('chat history survives a reload and can be cleared locally', () => {
   const restored = loadHistory(storage);
   assert.equal(restored.activeId, 'one');
   assert.equal(restored.chats[0].messages[1].sources[0].id, 'nih-pprl-fuzzy');
+  assert.equal(restored.chats[0].pendingField, 'holders');
   clearHistory(storage);
   assert.deepEqual(loadHistory(storage), { activeId: null, chats: [] });
 });

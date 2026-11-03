@@ -14,6 +14,7 @@ export function loadHistory(storage) {
         profile: chat.profile && typeof chat.profile === 'object' && !Array.isArray(chat.profile) ? chat.profile : {},
         mode: ['learn', 'choose', 'plan'].includes(chat.mode) ? chat.mode : 'learn',
         lastTopicQuery: typeof chat.lastTopicQuery === 'string' ? chat.lastTopicQuery.slice(0, 1200) : '',
+        pendingField: typeof chat.pendingField === 'string' ? chat.pendingField.slice(0, 32) : '',
         messages: chat.messages.slice(-MAX_MESSAGES).filter(message =>
           message && ['user', 'assistant'].includes(message.role) && typeof message.text === 'string')
           .map(message => ({
