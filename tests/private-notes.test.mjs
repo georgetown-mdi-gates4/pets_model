@@ -10,16 +10,16 @@ function modelReply(segments) {
   return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ segments }) }] } }] });
 }
 
-test('private notes load through an authenticated GCS object and stay server-side', async () => {
+test('private notes load through an authenticated Secret Manager version and stay server-side', async () => {
   let calls = 0;
   const notes = createPrivateNotesProvider({
-    uri: 'gs://private-pets-notes/nysed/meeting-notes.json',
+    secretVersion: 'projects/pets-model-123/secrets/nysed-meeting-notes/versions/latest',
     accessTokenProvider: async () => 'runtime-token',
     fetchImpl: async (url, options) => {
       calls++;
-      assert.equal(url, 'https://storage.googleapis.com/storage/v1/b/private-pets-notes/o/nysed%2Fmeeting-notes.json?alt=media');
+      assert.equal(url, 'https://secretmanager.googleapis.com/v1/projects/pets-model-123/secrets/nysed-meeting-notes/versions/latest:access');
       assert.equal(options.headers.authorization, 'Bearer runtime-token');
-      return Response.json(corpus);
+      return Response.json({ payload: { data: Buffer.from(JSON.stringify(corpus)).toString('base64') } });
     }
   });
   assert.deepEqual(await notes('borderline metadata review'), [privateSentence]);

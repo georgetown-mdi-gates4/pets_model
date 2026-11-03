@@ -1,12 +1,10 @@
 import { tokens } from '../public/retrieval.mjs';
 
-const MAX_OBJECT_BYTES = 200_000;
+const MAX_SECRET_BYTES = 64 * 1024;
 const CACHE_MS = 10 * 60 * 1000;
 
-function parseUri(uri) {
-  const match = /^gs:\/\/([a-z0-9][a-z0-9._-]{2,221})\/(.+)$/i.exec(uri || '');
-  if (!match || match[2].includes('?') || match[2].includes('#')) throw new Error('Invalid private notes URI');
-  return { bucket: match[1], object: match[2] };
+function validVersion(name) {
+  return /^projects\/[a-z][a-z0-9-]{4,61}[a-z0-9]\/secrets\/[a-zA-Z0-9_-]{1,255}\/versions\/(?:latest|[1-9][0-9]*)$/.test(name || '');
 }
 
 function validateCorpus(value) {
@@ -25,10 +23,10 @@ function validateCorpus(value) {
   return chunks;
 }
 
-/** Fetches a private object with the Cloud Run service identity; no notes enter the image or browser. */
-export function createPrivateNotesProvider({ uri, accessTokenProvider, fetchImpl = fetch, now = Date.now } = {}) {
-  if (!uri) return async () => [];
-  const { bucket, object } = parseUri(uri);
+/** Fetches one restricted Secret Manager version; no notes enter the image or browser. */
+export function createPrivateNotesProvider({ secretVersion, accessTokenProvider, fetchImpl = fetch, now = Date.now } = {}) {
+  if (!secretVersion) return async () => [];
+  if (!validVersion(secretVersion)) throw new Error('Invalid private notes secret version');
   if (typeof accessTokenProvider !== 'function') throw new Error('Private notes require service identity');
   let cached;
   let expiresAt = 0;
@@ -37,17 +35,17 @@ export function createPrivateNotesProvider({ uri, accessTokenProvider, fetchImpl
     if (cached && now() < expiresAt) return cached;
     if (!inFlight) inFlight = (async () => {
       const token = await accessTokenProvider();
-      const url = `https://storage.googleapis.com/storage/v1/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(object)}?alt=media`;
+      const url = `https://secretmanager.googleapis.com/v1/${secretVersion}:access`;
       const response = await fetchImpl(url, {
         headers: { authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(5000)
       });
       if (!response.ok) throw new Error('Private notes unavailable');
-      const size = Number(response.headers.get('content-length'));
-      if (size > MAX_OBJECT_BYTES) throw new Error('Private notes object too large');
-      const body = await response.text();
-      if (Buffer.byteLength(body) > MAX_OBJECT_BYTES) throw new Error('Private notes object too large');
-      cached = validateCorpus(JSON.parse(body));
+      const payload = await response.json();
+      if (typeof payload?.payload?.data !== 'string') throw new Error('Invalid private notes payload');
+      const body = Buffer.from(payload.payload.data, 'base64');
+      if (!body.length || body.length > MAX_SECRET_BYTES) throw new Error('Private notes payload too large');
+      cached = validateCorpus(JSON.parse(body.toString('utf8')));
       expiresAt = now() + CACHE_MS;
       return cached;
     })();

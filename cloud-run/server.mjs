@@ -149,7 +149,7 @@ export function createCloudRunServer({
   chatHandler = handleChatRequest,
   accessTokenProvider = createMetadataAccessTokenProvider(),
   privateNotesProvider = createPrivateNotesProvider({
-    uri: process.env.PRIVATE_NOTES_GCS_URI,
+    secretVersion: process.env.PRIVATE_NOTES_SECRET_VERSION,
     accessTokenProvider
   }),
   reserveModelCall = createDailyModelBudget(),
