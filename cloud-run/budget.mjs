@@ -1,5 +1,5 @@
 /** Best-effort paid-call cap for one process; restarts and scaling reset it. */
-export function createDailyModelBudget({ now = Date.now, limit = 20 } = {}) {
+export function createDailyModelBudget({ now = Date.now, limit = 250 } = {}) {
   let utcDay;
   let used = 0;
   return async function reserveModelCall() {

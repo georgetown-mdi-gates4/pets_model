@@ -155,7 +155,7 @@ export function createCloudRunServer({
   reserveModelCall = createDailyModelBudget(),
   projectId = process.env.VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT,
   location = process.env.VERTEX_LOCATION || 'global',
-  model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite'
+  model = process.env.GEMINI_MODEL || 'gemini-3.5-flash'
 } = {}) {
   if (typeof projectId !== 'string' || !/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(projectId)) {
     throw new Error('VERTEX_PROJECT_ID must be a valid Google Cloud project ID');

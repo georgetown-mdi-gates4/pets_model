@@ -1,6 +1,6 @@
 import { FIELDS, assessCase, cleanProfile, inferProfile, nextQuestion, profileLabel } from './engine.mjs';
 import { createIndex, retrieve, evidenceFor } from './retrieval.mjs';
-import { conversationalReply } from './conversation.mjs';
+import { conversationalReply, openingUseCaseQuestion } from './conversation.mjs';
 import { clearHistory, loadHistory, saveHistory } from './history.mjs';
 import { matchingWords, sourceNoteExcerpt } from './evidence-notes.mjs';
 
@@ -225,7 +225,7 @@ function checkedModelAnswer(payload) {
     if (payload.sources.length || payload.segments.some(segment =>
       typeof segment?.text !== 'string' || !segment.text.trim() || segment.text.length > 2200 ||
       !Array.isArray(segment.source_ids) || segment.source_ids.length)) return null;
-    return { segments: payload.segments.map(segment => ({ text: segment.text.trim(), docs: [] })), hits: [] };
+    return { kind: 'chat', segments: payload.segments.map(segment => ({ text: segment.text.trim(), docs: [] })), hits: [] };
   }
   const publicDocs = new Map(state.index.docs.map(doc => [doc.id, doc]));
   const supplied = new Map();
@@ -337,7 +337,7 @@ async function modelTurn(intent, query, fallback, title = '') {
   state.busy = false;
   updateControls();
   if (model?.review) addMessage('assistant', legalMessage(query));
-  else if (model && !model.unavailable) addMessage('assistant', intent === 'choose' ? fallback(model) : modelMessage(model, title, query));
+  else if (model && !model.unavailable) addMessage('assistant', intent === 'choose' && model.kind !== 'chat' ? fallback(model) : modelMessage(model, model.kind === 'chat' ? '' : title, query));
   else addMessage('assistant', localAnswer(fallback(), Boolean(model?.unavailable)));
   $('#prompt').focus();
 }
@@ -453,8 +453,16 @@ function showRecommendation(query) {
   if (state.sourceStatus !== 'ready') return;
   state.mode = 'choose';
   const assessment = assessCase(state.profile);
-  if (assessment.status === 'escalate' || !assessment.primary.length) {
+  const intake = openingUseCaseQuestion(query, state.profile, state.transcript.slice(0, -1));
+  if (assessment.status === 'escalate') {
     addMessage('assistant', recommendationMessage(assessment, query));
+    return;
+  }
+  if (intake) {
+    void modelTurn('choose', query, () => {
+      state.evidence = [];
+      return el('div', 'answer', `I can help. ${intake}`);
+    });
     return;
   }
   void modelTurn('choose', query, model => recommendationMessage(assessment, query, model));
@@ -465,6 +473,11 @@ function learningMessage(query, retrievalQuery = query) {
   if (socialReply) {
     state.evidence = [];
     return el('div', 'answer', socialReply);
+  }
+  const intake = openingUseCaseQuestion(query, state.profile, state.transcript.slice(0, -1));
+  if (intake) {
+    state.evidence = [];
+    return el('div', 'answer', `I can help. ${intake}`);
   }
   let hits = retrieve(state.index, retrievalQuery, { limit: 12 });
   if (/^\s*(what is|what are|define|explain)\b/i.test(query)) {
@@ -501,7 +514,7 @@ function planningMessage(query) {
   const codes = [...assessment.primary, ...assessment.complementary].map(entry => entry.code);
   const hits = codes.length
     ? evidenceFor(state.index, query, codes, 5)
-    : retrieve(state.index, `${query} pilot evaluation governance`, { limit: 5 });
+    : retrieve(state.index, query, { limit: 5 });
   state.evidence = hits;
   state.pendingQuestion = null;
   const answer = el('div', 'answer');

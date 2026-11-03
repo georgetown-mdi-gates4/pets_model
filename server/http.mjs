@@ -3,7 +3,7 @@ import { answerWithRag } from './rag.mjs';
 const MAX_BODY_BYTES = 8192;
 const MAX_MESSAGE_CHARS = 1200;
 const WINDOW_MS = 10 * 60 * 1000;
-const MAX_REQUESTS_PER_WINDOW = 30;
+const MAX_REQUESTS_PER_WINDOW = 60;
 const MAX_TRACKED_IDENTITIES = 4096;
 const PRUNE_INTERVAL_MS = 60 * 1000;
 // Best-effort abuse control within one worker isolate, not a global rate limit.

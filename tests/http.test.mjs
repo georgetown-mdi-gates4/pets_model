@@ -60,28 +60,28 @@ test('chat endpoint passes bounded request fields and returns private, uncached 
 test('chat endpoint limits repeated model calls for one identity', async () => {
   const limitedRequest = () => request(valid, { 'oai-authenticated-user-id': 'rate-test' });
   const answer = async () => ({ status: 'ok', segments: [], sources: [] });
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 60; i++) {
     const response = await handleChatRequest(limitedRequest(), { now: 10000 + i, answer });
     assert.equal(response.status, 200);
   }
-  assert.equal((await handleChatRequest(limitedRequest(), { now: 10030, answer })).status, 429);
+  assert.equal((await handleChatRequest(limitedRequest(), { now: 10060, answer })).status, 429);
   assert.equal((await handleChatRequest(limitedRequest(), { now: 610000, answer })).status, 200);
 });
 
 test('anonymous host rate key is supplied by the server, not a visitor identity header', async () => {
   const answer = async () => ({ status: 'ok', segments: [], sources: [] });
   const anonymous = () => request(valid, { 'oai-authenticated-user-id': 'forged-identity' });
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 60; i++) {
     const response = await handleChatRequest(anonymous(), {
       requireIdentity: false, rateKey: 'visitor-a', now: 2000000 + i, answer
     });
     assert.equal(response.status, 200);
   }
   assert.equal((await handleChatRequest(anonymous(), {
-    requireIdentity: false, rateKey: 'visitor-a', now: 2000030, answer
+    requireIdentity: false, rateKey: 'visitor-a', now: 2000060, answer
   })).status, 429);
   assert.equal((await handleChatRequest(anonymous(), {
-    requireIdentity: false, rateKey: 'visitor-b', now: 2000031, answer
+    requireIdentity: false, rateKey: 'visitor-b', now: 2000061, answer
   })).status, 200);
 });
 

@@ -19,10 +19,10 @@ test('Vertex express request uses structured citations without exposing the key 
     }
   });
   assert.deepEqual(draft.segments[0].source_ids, ['source-one']);
-  assert.deepEqual(usage, { model: 'gemini-3.5-flash-lite', promptTokenCount: 123, candidatesTokenCount: 24, thoughtsTokenCount: 8, totalTokenCount: 155 });
+  assert.deepEqual(usage, { model: 'gemini-3.5-flash', promptTokenCount: 123, candidatesTokenCount: 24, thoughtsTokenCount: 8, totalTokenCount: 155 });
   assert.equal(request.options.headers['x-goog-api-key'], 'test-key');
   assert.doesNotMatch(request.url, /test-key/);
-  assert.equal(request.url, 'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash-lite:generateContent');
+  assert.equal(request.url, 'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.5-flash:generateContent');
   assert.equal(request.body.store, undefined);
   assert.equal(request.body.generationConfig.thinkingConfig.thinkingLevel, 'LOW');
   assert.equal(request.body.generationConfig.responseMimeType, 'application/json');

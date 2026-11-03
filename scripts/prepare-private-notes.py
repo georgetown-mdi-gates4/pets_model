@@ -7,6 +7,7 @@ does not upload or disclose the source file.
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from xml.etree import ElementTree as ET
@@ -15,8 +16,18 @@ from io import BytesIO
 
 
 DOCX_NAME = "NYSED-MDI Running Meeting Notes.docx"
-MAX_CHARS = 1000
 NS = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+TECHNICAL = re.compile(
+    r"privacy|enclave|clean room|synthetic|metadata|governance|record link|linkage|"
+    r"match(?:ing|es)?\b|disclos|suppression|\bquery\b|tokeniz|hash(?:ing)?\b|"
+    r"identifier|federated|\bmpc\b|\bsmpc\b|\bpsi\b|algorithm|audit|aggregation|"
+    r"probabilistic|data shar|data access|data use|data agreement|false positive|"
+    r"false negative|pprl", re.I
+)
+LOGISTICS = re.compile(
+    r"\b(?:nda|calendar|schedule|email|contract|signature|agenda|"
+    r"invoice|travel|follow.up|zoom|grant needs)\b", re.I
+)
 
 
 def source_bytes(archive: Path) -> bytes:
@@ -37,28 +48,10 @@ def paragraphs(document: bytes):
 
 
 def chunk_text(values):
-    chunks = []
-    current = ""
-    for paragraph in values:
-        while paragraph:
-            available = MAX_CHARS - len(current) - (1 if current else 0)
-            if len(paragraph) <= available:
-                current = f"{current}\n{paragraph}" if current else paragraph
-                break
-            if current and available < 200:
-                chunks.append(current)
-                current = ""
-                continue
-            cut = paragraph.rfind(" ", 0, available + 1)
-            if cut < 200:
-                cut = available
-            part, paragraph = paragraph[:cut].strip(), paragraph[cut:].strip()
-            current = f"{current}\n{part}" if current else part
-            chunks.append(current)
-            current = ""
-    if current:
-        chunks.append(current)
-    return [{"id": f"meeting-{i:03d}", "text": text} for i, text in enumerate(chunks, 1)]
+    # Keep one technical observation per chunk. Raw chronological grouping
+    # mixed PET design discussion with unrelated meeting logistics.
+    observations = [value for value in values if TECHNICAL.search(value) and not LOGISTICS.search(value)]
+    return [{"id": f"meeting-{i:03d}", "text": text} for i, text in enumerate(observations, 1)]
 
 
 def main():

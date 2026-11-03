@@ -15,6 +15,43 @@ test('greetings use Gemini as conversation without PET citations', async () => {
   assert.match(response.segments[0].text, /^Hi!/);
 });
 
+test('asking the chatbot its name never retrieves name-matched pilot reports', async () => {
+  const model = recordingModel((_ids, body) => {
+    assert.deepEqual(body.generationConfig.responseSchema.properties.segments.items.properties.source_ids.items, { type: 'STRING' });
+    return [{ text: 'I’m PETs Model. Tell me about your privacy challenge.', source_ids: [] }];
+  });
+  const response = await answerWithRag({ message: "what's your name?", intent: 'learn' }, { apiKey: 'test-key', fetchImpl: model.fetchImpl });
+  assert.equal(response.status, 'chat');
+  assert.deepEqual(response.sources, []);
+  assert.match(response.segments[0].text, /PETs Model/);
+  assert.doesNotMatch(model.calls[0].body.contents[0].parts[0].text, /DC ETEP pilot: two exact PSI joins/);
+});
+
+test('an underspecified data-sharing use case asks for purpose without a pilot citation', async () => {
+  const model = recordingModel(() => [{ text: 'I can help. What will the recipient do with the data after you share it?', source_ids: [] }]);
+  for (const message of [
+    'I have a set of data I want to share with the DC department of education. What PET should I use?',
+    "Hello! I'm working with the New York Department of Education and I'd like to share some information securely. Could you help?"
+  ]) {
+    const response = await answerWithRag({ message, intent: 'learn' }, { apiKey: 'test-key', fetchImpl: model.fetchImpl });
+    assert.equal(response.status, 'chat', message);
+    assert.deepEqual(response.sources, []);
+    assert.match(response.segments[0].text, /What will the recipient do/);
+  }
+});
+
+test('intake rejects a model answer that parrots a prior pilot', async () => {
+  const response = await answerWithRag({
+    message: 'I want to share data with the DC department of education. What PET should I use?', intent: 'choose'
+  }, {
+    apiKey: 'test-key',
+    fetchImpl: async () => modelReply([{ text: 'The DC ETEP pilot used PSI. Want to use that?', source_ids: [] }])
+  });
+  assert.equal(response.status, 'chat');
+  assert.match(response.segments[0].text, /What are you trying to do/);
+  assert.deepEqual(response.sources, []);
+});
+
 function modelReply(segments) {
   return new Response(JSON.stringify({
     candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ segments }) }] } }]
@@ -43,7 +80,7 @@ test('grounded informational answer exposes only cited public-source metadata', 
   assert.equal(model.calls.length, 1);
   assert.equal(model.calls[0].options.headers['x-goog-api-key'], 'test-key');
   assert.equal(model.calls[0].body.store, undefined);
-  assert.match(model.calls[0].url, /gemini-3\.5-flash-lite:generateContent$/);
+  assert.match(model.calls[0].url, /gemini-3\.5-flash:generateContent$/);
 });
 
 test('invented citations cause fail-closed response', async () => {

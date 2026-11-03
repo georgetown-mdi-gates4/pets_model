@@ -97,7 +97,7 @@ test('Cloud Run adapter bounds chat bodies and ignores caller credential and rat
     assert.equal(calls[0].options.requireIdentity, false);
     assert.equal(calls[0].options.accessTokenProvider, accessTokenProvider);
     assert.equal(calls[0].options.projectId, 'valid-project');
-    assert.equal(calls[0].options.model, 'gemini-3.5-flash-lite');
+    assert.equal(calls[0].options.model, 'gemini-3.5-flash');
     assert.equal(calls[0].options.rateKey, 'public-cloud-run');
     assert.equal(calls[0].options.rateKey, calls[1].options.rateKey);
     assert.equal(calls[0].options.rateKey, calls[2].options.rateKey);
