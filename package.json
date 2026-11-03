@@ -9,7 +9,7 @@
     "test": "node --test tests/*.test.mjs",
     "validate:corpus": "node scripts/validate-corpus.mjs",
     "eval": "node scripts/evaluate-retrieval.mjs",
-    "check": "node --check public/engine.mjs && node --check public/retrieval.mjs && node --check public/app.mjs && node --check server/rag.mjs && node --check server/private-notes.mjs && node --check server/gemini.mjs && node --check server/http.mjs && npm run validate:corpus && npm test && npm run eval",
+    "check": "node --check public/engine.mjs && node --check public/retrieval.mjs && node --check public/app.mjs && node --check server/rag.mjs && node --check server/gemini.mjs && node --check server/http.mjs && npm run validate:corpus && npm test && npm run eval",
     "install:ci": "node scripts/install-ci.mjs",
     "dev": "node scripts/run-framework.mjs dev",
     "build": "node scripts/run-framework.mjs build",

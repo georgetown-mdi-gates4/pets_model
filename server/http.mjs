@@ -59,7 +59,7 @@ async function readLimitedBody(request) {
 
 /** Thin HTTP boundary shared by the authenticated Site and a public Worker. */
 export async function handleChatRequest(request, {
-  apiKey, accessTokenProvider, model, projectId, location, fetchImpl, reserveModelCall, onUsage, privateNotesProvider, answer = answerWithRag, requireIdentity = true,
+  apiKey, accessTokenProvider, model, projectId, location, fetchImpl, reserveModelCall, onUsage, answer = answerWithRag, requireIdentity = true,
   rateKey, now = Date.now()
 } = {}) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
@@ -95,7 +95,7 @@ export async function handleChatRequest(request, {
       intent: input.intent,
       profile: input.profile,
       context: input.context
-    }, { apiKey, accessTokenProvider, model, projectId, location, fetchImpl, reserveModelCall, onUsage, privateNotesProvider });
+    }, { apiKey, accessTokenProvider, model, projectId, location, fetchImpl, reserveModelCall, onUsage });
     return json(result);
   } catch {
     return json({ status: 'unavailable', segments: [], sources: [], reason: 'server_error' }, 503);

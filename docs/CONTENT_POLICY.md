@@ -18,7 +18,7 @@ The validator permits listed MDI, NIST, ICO, U.S. Department of Education, GOV.U
 
 Do not add internal meeting notes, partner contact sheets, grant budgets, unfinished PET sheets, draft slide decks, unverified public-link inventories, private repositories, raw datasets, user chats, or documents whose release rights are unclear. Supplied attachments are excluded as files even when an attachment matches a public report; use the publisher's public page or report link.
 
-Approved confidential NYSED meeting notes have a separate [server-only retrieval path](PRIVATE_NOTES.md). This exception does not change the public corpus policy: private chunks stay out of `public/`, GitHub, browser state, citations, and “Why this answer.”
+Confidential NYSED meeting notes remain local. The hosted chatbot does not retrieve them or include them in citations or “Why this answer.”
 
 The Worker sends retrieved **public** summaries to Vertex AI as evidence. A visitor's question, recent conversation, case facts, and rule summary may also be sent when Gemini is active, so corpus approval does not make visitor input safe to share. Do not enter protected or confidential case details. Provider and host retention require separate review.
 
