@@ -7,7 +7,7 @@
   <meta name="description" content="Explore privacy-enhancing technologies and your use case in one conversation.">
   <title>PETs Model</title>
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="stylesheet" href="./styles.css?v=20261028">
+  <link rel="stylesheet" href="./styles.css?v=20261103">
 </head>
 <body>
   <a class="skip" href="#messages">Skip to conversation</a>
@@ -19,6 +19,11 @@
       </a>
       <div class="top-actions">
         <span id="source-count" class="source-status" role="status" aria-live="polite">Loading sources…</span>
+        <details id="history" class="history-menu">
+          <summary>Chats</summary>
+          <div id="chat-list" class="history-list"></div>
+        </details>
+        <a class="quiet-button resource-link" href="https://mdi.georgetown.edu/pets/">Resources</a>
         <button id="export" class="quiet-button" type="button" title="Download this conversation">Download</button>
         <button id="reset" class="new-button" type="button">New chat</button>
       </div>
@@ -42,13 +47,13 @@
           <label class="sr-only" for="prompt">Your message</label>
           <textarea id="prompt" rows="2" maxlength="1200" placeholder="Ask a question or describe what you need to do…"></textarea>
           <div class="composer-foot">
-            <span>Use hypothetical details. If AI is active, messages go to its provider.</span>
+            <span>PETs Model is an AI chatbot. Please be aware, for security purposes, that messages are routed through the cloud.</span>
             <button type="submit">Send<span class="sr-only"> message</span><span aria-hidden="true"> ↑</span></button>
           </div>
         </form>
       </section>
     </main>
   </div>
-  <script type="module" src="./app.mjs?v=20261103c"></script>
+  <script type="module" src="./app.mjs?v=20261103f"></script>
 </body>
 </html>

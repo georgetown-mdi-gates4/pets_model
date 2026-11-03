@@ -1,6 +1,8 @@
 import { FIELDS, assessCase, cleanProfile, inferProfile, nextQuestion, profileLabel } from './engine.mjs';
 import { createIndex, retrieve, evidenceFor } from './retrieval.mjs';
 import { conversationalReply } from './conversation.mjs';
+import { clearHistory, loadHistory, saveHistory } from './history.mjs';
+import { matchingWords, sourceNoteExcerpt } from './evidence-notes.mjs';
 
 const $ = selector => document.querySelector(selector);
 const el = (tag, className = '', text) => {
@@ -16,8 +18,99 @@ const state = {
 };
 const messages = $('#messages');
 const mascot = $('#mascot');
+let browserStorage;
+try { browserStorage = window.localStorage; } catch { browserStorage = null; }
+let history = loadHistory(browserStorage);
+let historySaved = Boolean(browserStorage);
+state.chatId = history.chats.some(chat => chat.id === history.activeId)
+  ? history.activeId : history.chats[0]?.id || crypto.randomUUID();
 let mascotTimer;
 let mascotReplyTimer;
+
+function renderSavedChats() {
+  const list = $('#chat-list');
+  list.replaceChildren();
+  const chats = history.chats.filter(chat => chat.messages.length);
+  if (!chats.length) list.append(el('p', 'history-note', 'No saved chats yet.'));
+  chats.forEach(chat => {
+    const button = el('button', 'saved-chat', chat.title);
+    button.type = 'button';
+    button.title = chat.title;
+    if (chat.id === state.chatId) button.setAttribute('aria-current', 'page');
+    button.addEventListener('click', () => openSavedChat(chat.id));
+    list.append(button);
+  });
+  list.append(el('p', 'history-note', historySaved
+    ? 'Saved in this browser only. Clear history on shared devices.'
+    : 'This browser is not allowing chat history to be saved.'));
+  if (chats.length) {
+    const clear = el('button', 'clear-history', 'Clear saved chats');
+    clear.type = 'button';
+    clear.addEventListener('click', () => {
+      if (!window.confirm('Delete all chats saved in this browser?')) return;
+      clearHistory(browserStorage);
+      history = { activeId: null, chats: [] };
+      reset();
+    });
+    list.append(clear);
+  }
+}
+
+function saveCurrentChat() {
+  if (!state.transcript.length) return;
+  const firstQuestion = state.transcript.find(message => message.role === 'user')?.text || 'Chat';
+  const chat = {
+    id: state.chatId,
+    title: firstQuestion.replace(/\s+/g, ' ').slice(0, 48),
+    updatedAt: new Date().toISOString(),
+    messages: state.transcript.slice(-80),
+    profile: cleanProfile(state.profile),
+    mode: state.mode,
+    lastTopicQuery: state.lastTopicQuery
+  };
+  history.chats = [chat, ...history.chats.filter(item => item.id !== chat.id)].slice(0, 30);
+  history.activeId = state.chatId;
+  historySaved = saveHistory(browserStorage, history);
+  renderSavedChats();
+}
+
+function openSavedChat(id) {
+  const chat = history.chats.find(item => item.id === id);
+  if (!chat) return;
+  state.turn++;
+  state.controller?.abort();
+  state.controller = null;
+  state.busy = false;
+  state.chatId = chat.id;
+  state.profile = cleanProfile(chat.profile);
+  state.transcript = chat.messages.map(message => ({ ...message, sources: message.sources || [] }));
+  state.mode = chat.mode;
+  state.lastTopicQuery = chat.lastTopicQuery;
+  state.pendingQuestion = nextQuestion(assessCase(state.profile));
+  state.evidence = [];
+  messages.replaceChildren();
+  let lastQuestion = '';
+  for (const message of state.transcript) {
+    const row = el('div', `message-row ${message.role} restored`);
+    const bubble = el('div', 'bubble');
+    bubble.append(el('p', 'restored-text', message.text));
+    if (message.role === 'user') lastQuestion = message.text;
+    if (message.role === 'assistant' && message.sources?.length) {
+      const hits = message.sources.map(source => state.index.docs.find(doc => doc.id === source.id))
+        .filter(Boolean).map(document => ({ document }));
+      if (hits.length) bubble.append(sourceDetails(hits, null, lastQuestion));
+    }
+    row.append(bubble);
+    messages.append(row);
+  }
+  document.body.classList.toggle('has-messages', Boolean(state.transcript.length));
+  history.activeId = chat.id;
+  historySaved = saveHistory(browserStorage, history);
+  renderSavedChats();
+  $('#history').open = false;
+  updateControls();
+  messages.scrollTop = messages.scrollHeight;
+}
 
 function setMascot(action, duration = 0) {
   clearTimeout(mascotTimer);
@@ -53,6 +146,12 @@ function collapseEarlierRecommendations() {
   });
 }
 
+function messageText(bubble) {
+  const copy = bubble.cloneNode(true);
+  copy.querySelectorAll('details, .inline-citation, .ai-note, .choice-list').forEach(node => node.remove());
+  return (copy.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
 function addMessage(kind, content) {
   messages.querySelectorAll('.choice:not([disabled]), .case-field select:not([disabled])')
     .forEach(control => { control.disabled = true; });
@@ -72,9 +171,10 @@ function addMessage(kind, content) {
   else reactToAnswer('waving');
   state.transcript.push({
     role: kind,
-    text: (bubble.innerText || bubble.textContent || '').trim(),
-    sources: kind === 'assistant' ? state.evidence.map(hit => ({ title: hit.document.title, url: hit.document.url })) : []
+    text: messageText(bubble),
+    sources: kind === 'assistant' ? state.evidence.map(hit => ({ id: hit.document.id, title: hit.document.title, url: hit.document.url })) : []
   });
+  saveCurrentChat();
   row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
@@ -91,18 +191,25 @@ function setSourceStatus(status) {
   updateControls();
 }
 
-function sourceDetails(hits, extra) {
+function sourceDetails(hits, extra, query = '') {
   const details = el('details', 'answer-details');
-  details.append(el('summary', '', extra ? 'Why and sources' : 'Sources'));
+  details.append(el('summary', '', 'Why this answer'));
   const content = el('div', 'answer-detail-content');
-  content.append(el('p', 'review-note', 'Draft summaries. Check the original sources.'));
+  content.append(el('p', 'review-note', 'Evidence below is from draft source notes. Open the original to verify.'));
   if (extra) content.append(extra);
-  const unique = hits.filter((hit, i) => hits.findIndex(x => x.document.url === hit.document.url) === i);
+  const unique = hits.filter((hit, i) => hits.findIndex(x => x.document.id === hit.document.id) === i);
   if (unique.length) {
     const list = el('ul', 'source-links');
-    unique.slice(0, 5).forEach(({ document: doc }) => {
-      const item = el('li');
+    unique.forEach(({ document: doc }) => {
+      const item = el('li', 'source-evidence');
       item.append(safeLink(doc.url, `${doc.title} ↗`, 'citation'));
+      const words = matchingWords(query, `${doc.title} ${doc.text}`);
+      if (words.length) item.append(el('p', 'source-match', `Matches your question: ${words.join(', ')}`));
+      const excerpt = sourceNoteExcerpt(doc.text, query);
+      if (excerpt) {
+        item.append(el('p', 'source-match', 'Source note excerpt:'));
+        item.append(el('blockquote', 'source-excerpt', excerpt));
+      }
       list.append(item);
     });
     content.append(list);
@@ -157,13 +264,13 @@ function citedParagraphs(model) {
   return content;
 }
 
-function modelMessage(model, title = '') {
+function modelMessage(model, title = '', query = '') {
   state.evidence = model.hits;
   state.pendingQuestion = null;
   const answer = el('div', 'answer');
   if (title) answer.append(el('h2', 'answer-title', title));
   answer.append(citedParagraphs(model));
-  if (model.hits.length) answer.append(sourceDetails(model.hits));
+  if (model.hits.length) answer.append(sourceDetails(model.hits, null, query));
   return answer;
 }
 
@@ -230,7 +337,7 @@ async function modelTurn(intent, query, fallback, title = '') {
   state.busy = false;
   updateControls();
   if (model?.review) addMessage('assistant', legalMessage(query));
-  else if (model && !model.unavailable) addMessage('assistant', intent === 'choose' ? fallback(model) : modelMessage(model, title));
+  else if (model && !model.unavailable) addMessage('assistant', intent === 'choose' ? fallback(model) : modelMessage(model, title, query));
   else addMessage('assistant', localAnswer(fallback(), Boolean(model?.unavailable)));
   $('#prompt').focus();
 }
@@ -337,7 +444,7 @@ function recommendationMessage(result, query, model = null) {
   const hits = [...ruleHits, ...(model?.hits || [])]
     .filter((hit, i, all) => all.findIndex(entry => entry.document.id === hit.document.id) === i);
   state.evidence = hits;
-  if (codes.length || result.avoid.length) answer.append(sourceDetails(hits, reasons(result)));
+  if (codes.length || result.avoid.length) answer.append(sourceDetails(hits, reasons(result), query));
   if (Object.keys(state.profile).length) answer.append(caseDetails());
   return answer;
 }
@@ -384,7 +491,7 @@ function learningMessage(query, retrievalQuery = query) {
     paragraph.append(safeLink(hit.document.url, 'Source ↗', 'inline-citation'));
     answer.append(paragraph);
   });
-  answer.append(sourceDetails(hits));
+  answer.append(sourceDetails(hits, null, retrievalQuery));
   return answer;
 }
 
@@ -413,7 +520,7 @@ function planningMessage(query) {
     item.append(el('strong', '', title), document.createTextNode(` — ${detail}`));
     list.append(item);
   });
-  answer.append(list, sourceDetails(hits));
+  answer.append(list, sourceDetails(hits, null, query));
   return answer;
 }
 
@@ -436,7 +543,7 @@ function legalMessage(query) {
   const answer = el('div', 'answer');
   answer.append(el('h2', 'answer-title', 'Ask a privacy or legal reviewer'));
   answer.append(el('p', 'answer-lead answer-warning', 'A chat cannot confirm whether this use or disclosure is allowed. A reviewer needs the purpose, data, agreements, and people receiving the result.'));
-  answer.append(sourceDetails(hits));
+  answer.append(sourceDetails(hits, null, query));
   return answer;
 }
 
@@ -532,7 +639,7 @@ function exportSummary() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function reset() {
+function reset({ initial = false } = {}) {
   state.turn += 1;
   state.controller?.abort();
   state.controller = null;
@@ -544,11 +651,15 @@ function reset() {
   state.pendingQuestion = null;
   state.mode = 'learn';
   state.aiNoticeShown = false;
+  if (!initial) state.chatId = crypto.randomUUID();
   messages.replaceChildren();
   document.body.classList.remove('has-messages');
   $('#prompt').value = '';
   updateControls();
   setMascot('waving', 1200);
+  history.activeId = state.chatId;
+  historySaved = saveHistory(browserStorage, history);
+  renderSavedChats();
 }
 
 $('#composer').addEventListener('submit', event => {
@@ -567,7 +678,7 @@ document.querySelectorAll('[data-prompt]').forEach(button => button.addEventList
 $('#export').addEventListener('click', () => { exportSummary(); setMascot('waving', 1200); });
 $('#reset').addEventListener('click', reset);
 
-reset();
+reset({ initial: true });
 setSourceStatus('loading');
 setMascot('waiting');
 fetch('./data/sources.json', { cache: 'no-cache' }).then(response => {
@@ -578,6 +689,8 @@ fetch('./data/sources.json', { cache: 'no-cache' }).then(response => {
   if (!state.index.docs.length) throw new Error('No source passages loaded');
   $('#source-count').textContent = `${state.index.docs.length} source notes`;
   setSourceStatus('ready');
+  const savedChat = history.chats.find(chat => chat.id === history.activeId);
+  if (savedChat) openSavedChat(savedChat.id);
   setMascot('waving', 1200);
 }).catch(() => {
   setSourceStatus('failed');

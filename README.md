@@ -38,7 +38,7 @@ Open `http://localhost:5173/`. The public-source fallback works without a key. G
 
 Use hypothetical details. When Gemini answers are active, the browser sends the current message, up to four recent conversation turns, and structured case details to the app's server endpoint. The server sends the message and recent context to Vertex AI; PET questions with matching sources also include case facts, rules, and selected **public** source summaries. This app cannot promise that the hosting platform or Google retains no request data. Do not enter protected records, direct identifiers, confidential partner information, or material you are not authorized to send to that provider.
 
-The app does not intentionally persist chats or use analytics. The transcript and case details are held in browser memory for the session; **Download** creates a local Markdown file that the visitor can review before sharing. The public retrieval corpus contains no internal project materials or example datasets. See [the content policy](docs/CONTENT_POLICY.md).
+The app stores chats and case details in the visitor’s browser storage so they remain after a reload and can be reopened from **Chats**. This is specific to that browser profile, not synced across devices, and someone using the same browser profile can see them. **Clear saved chats** removes that browser copy. The app does not intentionally store server-side transcripts or use analytics; **Download** creates a local Markdown file that the visitor can review before sharing. The public retrieval corpus contains no internal project materials or example datasets. See [the content policy](docs/CONTENT_POLICY.md).
 
 ## Repository map
 

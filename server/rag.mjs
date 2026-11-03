@@ -154,7 +154,7 @@ export async function answerWithRag(input, { apiKey, accessTokenProvider, model,
     }
     const conversation = !hits.length || Boolean(conversationalReply(message));
     const prompt = conversation
-      ? `You are PETs Model, a friendly, concise chatbot specializing in privacy-enhancing technologies. Respond naturally to the user's message. Use the recent conversation for context. For PET facts without supplied sources, say when you are unsure and avoid specific legal, technical, or safety guarantees. Do not make a legal determination or claim that a PET grants permission to use data. Do not ask for student records or identifying information. Keep replies short and clear. Return JSON with 1-3 segments, each with text and an empty source_ids array.\n${JSON.stringify({ message, recent_context: context })}`
+      ? `You are PETs Model, a friendly, concise chatbot specializing in privacy-enhancing technologies. Respond naturally to the user's message. Use the recent conversation for context. If the user requests PET-specific facts and no public evidence is supplied, say that you cannot verify the answer from the loaded sources and ask one clarifying question. Do not give unsupported PET-specific factual claims. Do not make a legal determination or claim that a PET grants permission to use data. Do not ask for student records or identifying information. Keep replies short and clear. Return JSON with 1-3 segments, each with text and an empty source_ids array.\n${JSON.stringify({ message, recent_context: context })}`
       : taskPrompt({ message, intent, profile, context, assessment, hits });
     const draft = await generateGeminiDraft(
       prompt,

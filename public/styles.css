@@ -76,7 +76,7 @@ a { color: var(--blue); }
 .brand-mascot[data-action="jumping"] { background-image: url('./assets/bmo-jumping.gif'); }
 .brand-mascot[data-action="failed"] { background-image: url('./assets/bmo-failed.gif'); }
 .top-actions { display: flex; align-items: center; gap: 8px; }
-.top-actions button {
+.top-actions button, .top-actions .resource-link, .history-menu > summary {
   min-height: 36px;
   border-radius: 8px;
   font-size: 13px;
@@ -85,6 +85,16 @@ a { color: var(--blue); }
 }
 .quiet-button { padding: 7px 10px; border: 0; background: transparent; color: var(--muted); }
 .quiet-button:hover { background: var(--soft); color: var(--blue); }
+.resource-link { display: inline-flex; align-items: center; text-decoration: none; }
+.history-menu { position: relative; }
+.history-menu > summary { display: flex; align-items: center; padding: 7px 10px; color: var(--muted); cursor: pointer; list-style: none; }
+.history-menu > summary::-webkit-details-marker { display: none; }
+.history-menu > summary:hover { background: var(--soft); color: var(--blue); }
+.history-list { position: absolute; z-index: 20; top: 42px; right: 0; width: min(320px, 85vw); max-height: min(60vh, 480px); overflow-y: auto; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: 0 12px 30px rgba(4,30,65,.14); }
+.saved-chat, .clear-history { display: block; width: 100%; padding: 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); text-align: left; overflow: hidden; text-overflow: ellipsis; }
+.saved-chat:hover, .saved-chat[aria-current="page"] { background: var(--soft); }
+.clear-history { margin-top: 5px; color: var(--blue); }
+.history-note { margin: 9px 10px; color: var(--muted); font-size: 12px; line-height: 1.4; }
 .new-button { padding: 7px 13px; border: 1px solid #b9cad7; background: #fff; color: var(--navy); }
 .new-button:hover { border-color: var(--blue); background: #f4f8ff; }
 button:disabled { cursor: default; opacity: .55; }
@@ -234,6 +244,11 @@ button:disabled { cursor: default; opacity: .55; }
 .answer-reasons ul { margin: 8px 0 16px; padding-left: 22px; }
 .answer-reasons li { margin-bottom: 9px; }
 .source-links { display: grid; gap: 9px; margin: 13px 0 0; padding: 0; list-style: none; }
+.source-evidence { padding: 10px 0; border-top: 1px solid var(--line); }
+.source-evidence:first-child { border-top: 0; }
+.source-match { color: var(--muted); font-size: 14px; }
+.source-excerpt { margin: 8px 0 0; padding-left: 12px; border-left: 2px solid var(--cyan); color: #354b62; font-size: 15px; }
+.restored-text { margin: 0; white-space: pre-wrap; }
 .citation, .pet-source, .source-title {
   color: var(--blue);
   font-size: 16px;
@@ -329,6 +344,11 @@ button:disabled { cursor: default; opacity: .55; }
   .brand { font-size: 15px; }
   .brand-mascot { width: 47px; height: 51px; }
   .topbar { padding: 0 11px; }
+}
+
+@media (max-width: 470px) {
+  .brand span:last-child { display: none; }
+  .history-menu > summary, .resource-link, .top-actions .quiet-button, .top-actions .new-button { padding-left: 6px; padding-right: 6px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
