@@ -1,5 +1,6 @@
 import { FIELDS, assessCase, cleanProfile, inferProfile, nextQuestion, profileLabel } from './engine.mjs';
 import { createIndex, retrieve, evidenceFor } from './retrieval.mjs';
+import { conversationalReply } from './conversation.mjs';
 
 const $ = selector => document.querySelector(selector);
 const el = (tag, className = '', text) => {
@@ -470,6 +471,12 @@ function send(text) {
   if (newCase) reset();
   const pendingAnswer = newCase ? null : answerToPending(query);
   addMessage('user', query);
+  const socialReply = conversationalReply(query);
+  if (socialReply) {
+    state.evidence = [];
+    addMessage('assistant', socialReply);
+    return true;
+  }
   const followup = Boolean(state.mode === 'learn' && state.lastTopicQuery && !inferred.goal && isTopicFollowup(query));
   const intent = pendingAnswer ? 'choose' : isLegalQuestion(query) ? 'legal' : followup ? 'learn' : classify(query, inferred);
   if (intent === 'choose' || intent === 'plan') {

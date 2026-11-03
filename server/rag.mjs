@@ -2,6 +2,7 @@ import corpus from '../public/data/sources.json' with { type: 'json' };
 import { assessCase, cleanProfile, inferProfile } from '../public/engine.mjs';
 import { createIndex, retrieve, evidenceFor } from '../public/retrieval.mjs';
 import { generateGeminiDraft } from './gemini.mjs';
+import { conversationalReply } from '../public/conversation.mjs';
 
 const index = createIndex(corpus);
 const MAX_MESSAGE = 1200;
@@ -117,6 +118,8 @@ export async function answerWithRag(input, { apiKey, accessTokenProvider, model,
   const message = typeof input?.message === 'string' ? input.message.trim().slice(0, MAX_MESSAGE) : '';
   let intent = ['learn', 'choose', 'plan'].includes(input?.intent) ? input.intent : 'learn';
   if (!message) return result('insufficient', 'Please ask a question or describe your use case.', 'empty_message');
+  const socialReply = conversationalReply(message);
+  if (socialReply) return result('social', socialReply, 'conversation');
   const supplied = input?.profile && typeof input.profile === 'object' && !Array.isArray(input.profile) ? input.profile : {};
   const profile = cleanProfile({ ...supplied, ...inferProfile(message) });
   const assessment = assessCase(profile);

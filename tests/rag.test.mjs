@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { answerWithRag } from '../server/rag.mjs';
+import { conversationalReply } from '../public/conversation.mjs';
+
+test('greetings are conversational and do not spend a model call', async () => {
+  assert.match(conversationalReply('hello!'), /^Hi!/);
+  assert.equal(conversationalReply('What is differential privacy?'), null);
+  const response = await answerWithRag({ message: 'hello!', intent: 'learn' }, {
+    apiKey: 'test-key', fetchImpl: () => { throw new Error('Should not call model'); }
+  });
+  assert.equal(response.status, 'social');
+  assert.match(response.segments[0].text, /^Hi!/);
+});
 
 function modelReply(segments) {
   return new Response(JSON.stringify({
