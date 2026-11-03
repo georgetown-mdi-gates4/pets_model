@@ -208,7 +208,7 @@ function localAnswer(answer, unavailable = false) {
 
 function pendingMessage() {
   const row = el('div', 'message-row assistant pending');
-  row.append(el('div', 'bubble pending-bubble', 'Looking through public sources…'));
+  row.append(el('div', 'bubble pending-bubble', 'Thinking…'));
   messages.append(row);
   row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   return row;
