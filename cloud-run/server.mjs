@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { handleChatRequest } from '../server/http.mjs';
 import { createDailyModelBudget } from './budget.mjs';
 import { createMetadataAccessTokenProvider } from './metadata.mjs';
+import { createPrivateNotesProvider } from '../server/private-notes.mjs';
 
 const PUBLIC_ROOT = resolve(fileURLToPath(new URL('../public/', import.meta.url)));
 const MAX_BODY_BYTES = 8192;
@@ -147,6 +148,10 @@ export function createCloudRunServer({
   publicRoot = PUBLIC_ROOT,
   chatHandler = handleChatRequest,
   accessTokenProvider = createMetadataAccessTokenProvider(),
+  privateNotesProvider = createPrivateNotesProvider({
+    uri: process.env.PRIVATE_NOTES_GCS_URI,
+    accessTokenProvider
+  }),
   reserveModelCall = createDailyModelBudget(),
   projectId = process.env.VERTEX_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT,
   location = process.env.VERTEX_LOCATION || 'global',
@@ -187,6 +192,7 @@ export function createCloudRunServer({
           requireIdentity: false,
           rateKey: 'public-cloud-run',
           reserveModelCall,
+          privateNotesProvider,
           onUsage: usage => console.info(JSON.stringify({ event: 'gemini_usage', ...usage }))
         });
         await sendWebResponse(response, webResponse);
