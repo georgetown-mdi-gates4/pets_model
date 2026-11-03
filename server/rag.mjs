@@ -113,13 +113,19 @@ function validateDraft(draft, hits) {
   };
 }
 
+function validateConversation(draft) {
+  if (!draft || !Array.isArray(draft.segments) || draft.segments.length < 1 || draft.segments.length > 3) return null;
+  const segments = draft.segments.map(segment => ({ text: segment?.text?.trim(), source_ids: [] }));
+  if (segments.some(segment => !segment.text || segment.text.length > MAX_SEGMENT) ||
+      segments.reduce((length, segment) => length + segment.text.length, 0) > MAX_ANSWER) return null;
+  return { status: 'chat', segments, sources: [] };
+}
+
 /** Public-source RAG with deterministic privacy gates and validated citations. */
 export async function answerWithRag(input, { apiKey, accessTokenProvider, model, projectId, location, fetchImpl, reserveModelCall, onUsage } = {}) {
   const message = typeof input?.message === 'string' ? input.message.trim().slice(0, MAX_MESSAGE) : '';
   let intent = ['learn', 'choose', 'plan'].includes(input?.intent) ? input.intent : 'learn';
   if (!message) return result('insufficient', 'Please ask a question or describe your use case.', 'empty_message');
-  const socialReply = conversationalReply(message);
-  if (socialReply) return result('social', socialReply, 'conversation');
   const supplied = input?.profile && typeof input.profile === 'object' && !Array.isArray(input.profile) ? input.profile : {};
   const profile = cleanProfile({ ...supplied, ...inferProfile(message) });
   const assessment = assessCase(profile);
@@ -141,18 +147,22 @@ export async function answerWithRag(input, { apiKey, accessTokenProvider, model,
   }
   const context = compactContext(input?.context);
   const hits = evidenceForTask(intent, message, assessment, context);
-  if (!hits.length) return result('insufficient', 'I could not find enough public-source evidence for that question.', 'no_evidence');
   if (!apiKey && !accessTokenProvider) return result('unavailable', 'The model is not connected yet.', 'missing_credential');
   try {
     if (reserveModelCall && !(await reserveModelCall())) {
       return result('unavailable', 'The model has reached its daily limit.', 'daily_limit');
     }
+    const conversation = !hits.length || Boolean(conversationalReply(message));
+    const prompt = conversation
+      ? `You are PETs Model, a friendly, concise chatbot specializing in privacy-enhancing technologies. Respond naturally to the user's message. Use the recent conversation for context. For PET facts without supplied sources, say when you are unsure and avoid specific legal, technical, or safety guarantees. Do not make a legal determination or claim that a PET grants permission to use data. Do not ask for student records or identifying information. Keep replies short and clear. Return JSON with 1-3 segments, each with text and an empty source_ids array.\n${JSON.stringify({ message, recent_context: context })}`
+      : taskPrompt({ message, intent, profile, context, assessment, hits });
     const draft = await generateGeminiDraft(
-      taskPrompt({ message, intent, profile, context, assessment, hits }),
-      hits.map(hit => hit.document.id),
+      prompt,
+      conversation ? [] : hits.map(hit => hit.document.id),
       { apiKey, accessTokenProvider, model, projectId, location, fetchImpl, onUsage }
     );
-    return validateDraft(draft, hits) || result('unavailable', 'I could not verify the answer against the public sources.', 'invalid_citations');
+    return (conversation ? validateConversation(draft) : validateDraft(draft, hits)) ||
+      result('unavailable', 'I could not verify the answer.', conversation ? 'invalid_answer' : 'invalid_citations');
   } catch {
     return result('unavailable', 'The model is temporarily unavailable.', 'model_error');
   }

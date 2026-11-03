@@ -112,8 +112,14 @@ function sourceDetails(hits, extra) {
 }
 
 function checkedModelAnswer(payload) {
-  if (payload?.status !== 'ok' || !Array.isArray(payload.segments) || !Array.isArray(payload.sources)
+  if (!['ok', 'chat'].includes(payload?.status) || !Array.isArray(payload.segments) || !Array.isArray(payload.sources)
     || !payload.segments.length || payload.segments.length > 8) return null;
+  if (payload.status === 'chat') {
+    if (payload.sources.length || payload.segments.some(segment =>
+      typeof segment?.text !== 'string' || !segment.text.trim() || segment.text.length > 2200 ||
+      !Array.isArray(segment.source_ids) || segment.source_ids.length)) return null;
+    return { segments: payload.segments.map(segment => ({ text: segment.text.trim(), docs: [] })), hits: [] };
+  }
   const publicDocs = new Map(state.index.docs.map(doc => [doc.id, doc]));
   const supplied = new Map();
   for (const source of payload.sources) {
@@ -156,7 +162,8 @@ function modelMessage(model, title = '') {
   state.pendingQuestion = null;
   const answer = el('div', 'answer');
   if (title) answer.append(el('h2', 'answer-title', title));
-  answer.append(citedParagraphs(model), sourceDetails(model.hits));
+  answer.append(citedParagraphs(model));
+  if (model.hits.length) answer.append(sourceDetails(model.hits));
   return answer;
 }
 
@@ -181,7 +188,7 @@ async function requestModel(intent, query) {
     const payload = await response.json();
     if (payload?.status === 'review') return { review: true };
     if (payload?.status === 'unavailable') return { unavailable: true };
-    if (payload?.status === 'insufficient') return null;
+  if (payload?.status === 'insufficient') return null;
     return checkedModelAnswer(payload) || { unavailable: true };
   } catch {
     return { unavailable: true };
@@ -347,6 +354,11 @@ function showRecommendation(query) {
 }
 
 function learningMessage(query, retrievalQuery = query) {
+  const socialReply = conversationalReply(query);
+  if (socialReply) {
+    state.evidence = [];
+    return el('div', 'answer', socialReply);
+  }
   let hits = retrieve(state.index, retrievalQuery, { limit: 12 });
   if (/^\s*(what is|what are|define|explain)\b/i.test(query)) {
     hits = hits.slice().sort((a, b) => {
@@ -471,12 +483,6 @@ function send(text) {
   if (newCase) reset();
   const pendingAnswer = newCase ? null : answerToPending(query);
   addMessage('user', query);
-  const socialReply = conversationalReply(query);
-  if (socialReply) {
-    state.evidence = [];
-    addMessage('assistant', socialReply);
-    return true;
-  }
   const followup = Boolean(state.mode === 'learn' && state.lastTopicQuery && !inferred.goal && isTopicFollowup(query));
   const intent = pendingAnswer ? 'choose' : isLegalQuestion(query) ? 'legal' : followup ? 'learn' : classify(query, inferred);
   if (intent === 'choose' || intent === 'plan') {

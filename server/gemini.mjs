@@ -2,9 +2,10 @@
 export const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
 function responseSchema(sourceIds) {
+  const grounded = sourceIds.length > 0;
   return {
     type: 'OBJECT',
-    description: 'A concise PET answer grounded in the supplied public sources.',
+    description: grounded ? 'A concise PET answer grounded in the supplied public sources.' : 'A concise conversational answer.',
     properties: {
       segments: {
         type: 'ARRAY', minItems: 1, maxItems: 3,
@@ -13,9 +14,9 @@ function responseSchema(sourceIds) {
           properties: {
             text: { type: 'STRING', description: 'One short, plain-language answer segment.' },
             source_ids: {
-              type: 'ARRAY', minItems: 1, maxItems: 3,
+              type: 'ARRAY', minItems: grounded ? 1 : 0, maxItems: grounded ? 3 : 0,
               description: 'IDs of the supplied public sources supporting this segment.',
-              items: { type: 'STRING', format: 'enum', enum: sourceIds }
+              items: grounded ? { type: 'STRING', format: 'enum', enum: sourceIds } : { type: 'STRING' }
             }
           },
           propertyOrdering: ['text', 'source_ids'],
@@ -36,7 +37,7 @@ export async function generateGeminiDraft(prompt, sourceIds, {
   if (!/^[a-z0-9][a-z0-9.-]{0,79}$/i.test(model)) throw new Error('Invalid model name');
   if (projectId && !/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(projectId)) throw new Error('Invalid Vertex project ID');
   if (projectId && !/^(?:global|[a-z]+-[a-z]+[0-9])$/.test(location)) throw new Error('Invalid Vertex location');
-  if (!Array.isArray(sourceIds) || !sourceIds.length) throw new Error('No source IDs');
+  if (!Array.isArray(sourceIds)) throw new Error('Invalid source IDs');
   const modelPath = `publishers/google/models/${model}:generateContent`;
   const scope = projectId ? `projects/${projectId}/locations/${location}/` : '';
   const url = `https://aiplatform.googleapis.com/v1/${scope}${modelPath}`;

@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 import { answerWithRag } from '../server/rag.mjs';
 import { conversationalReply } from '../public/conversation.mjs';
 
-test('greetings are conversational and do not spend a model call', async () => {
+test('greetings use Gemini as conversation without PET citations', async () => {
   assert.match(conversationalReply('hello!'), /^Hi!/);
   assert.equal(conversationalReply('What is differential privacy?'), null);
+  let calls = 0;
   const response = await answerWithRag({ message: 'hello!', intent: 'learn' }, {
-    apiKey: 'test-key', fetchImpl: () => { throw new Error('Should not call model'); }
+    apiKey: 'test-key', fetchImpl: async () => { calls++; return modelReply([{ text: 'Hi! What would you like to explore?', source_ids: [] }]); }
   });
-  assert.equal(response.status, 'social');
+  assert.equal(response.status, 'chat');
+  assert.equal(calls, 1);
   assert.match(response.segments[0].text, /^Hi!/);
 });
 
@@ -24,7 +26,7 @@ function recordingModel(makeSegments) {
   const fetchImpl = async (url, options) => {
     const body = JSON.parse(options.body);
     calls.push({ url, options, body });
-    const ids = body.generationConfig.responseSchema.properties.segments.items.properties.source_ids.items.enum;
+    const ids = body.generationConfig.responseSchema.properties.segments.items.properties.source_ids.items.enum || [];
     return modelReply(makeSegments(ids, body));
   };
   return { calls, fetchImpl };
@@ -52,12 +54,14 @@ test('invented citations cause fail-closed response', async () => {
   assert.deepEqual(response.sources, []);
 });
 
-test('no matching public evidence abstains without a model call', async () => {
-  const model = recordingModel(() => { throw new Error('Should not call model'); });
-  const response = await answerWithRag({ message: 'volcanoes astrophysics xylophone', intent: 'learn' }, { apiKey: 'test-key', fetchImpl: model.fetchImpl });
-  assert.equal(response.status, 'insufficient');
-  assert.equal(response.reason, 'no_evidence');
-  assert.equal(model.calls.length, 0);
+test('no matching PET source uses conversational Gemini without citations', async () => {
+  let calls = 0;
+  const response = await answerWithRag({ message: 'volcanoes astrophysics xylophone', intent: 'learn' }, {
+    apiKey: 'test-key', fetchImpl: async () => { calls++; return modelReply([{ text: 'Could you clarify your question?', source_ids: [] }]); }
+  });
+  assert.equal(response.status, 'chat');
+  assert.equal(response.sources.length, 0);
+  assert.equal(calls, 1);
 });
 
 test('daily model budget is reserved only after evidence and review gates, and fails closed', async () => {
@@ -66,15 +70,15 @@ test('daily model budget is reserved only after evidence and review gates, and f
   const reserveModelCall = async () => { reservations++; return false; };
   const noEvidence = await answerWithRag({ message: 'volcanoes astrophysics xylophone', intent: 'learn' },
     { apiKey: 'test-key', fetchImpl: model.fetchImpl, reserveModelCall });
-  assert.equal(noEvidence.reason, 'no_evidence');
+  assert.equal(noEvidence.reason, 'daily_limit');
   const review = await answerWithRag({ message: 'Can we share student records under FERPA?', intent: 'learn' },
     { apiKey: 'test-key', fetchImpl: model.fetchImpl, reserveModelCall });
   assert.equal(review.reason, 'human_review_required');
-  assert.equal(reservations, 0);
+  assert.equal(reservations, 1);
   const limited = await answerWithRag({ message: 'What is differential privacy?', intent: 'learn' },
     { apiKey: 'test-key', fetchImpl: model.fetchImpl, reserveModelCall });
   assert.equal(limited.reason, 'daily_limit');
-  assert.equal(reservations, 1);
+  assert.equal(reservations, 2);
   assert.equal(model.calls.length, 0);
   const failed = await answerWithRag({ message: 'What is differential privacy?', intent: 'learn' },
     { apiKey: 'test-key', fetchImpl: model.fetchImpl, reserveModelCall: async () => { throw new Error('storage unavailable'); } });
@@ -206,8 +210,10 @@ test('provider failure returns an unavailable response without provider details'
   assert.doesNotMatch(JSON.stringify(response), /secret provider detail/);
 });
 
-test('service identity is requested only after public evidence and privacy review gates', async () => {
-  const model = recordingModel(ids => [{ text: 'A cited answer.', source_ids: [ids[0]] }]);
+test('service identity is requested for conversation and grounded answers after privacy review gates', async () => {
+  const model = recordingModel(ids => ids.length
+    ? [{ text: 'A cited answer.', source_ids: [ids[0]] }]
+    : [{ text: 'Could you clarify?', source_ids: [] }]);
   let tokenCalls = 0;
   const options = {
     projectId: 'pets-model-123',
@@ -217,10 +223,10 @@ test('service identity is requested only after public evidence and privacy revie
   const review = await answerWithRag({ message: 'Can we share student records under FERPA?', intent: 'learn' }, options);
   assert.equal(review.reason, 'human_review_required');
   const noEvidence = await answerWithRag({ message: 'volcanoes astrophysics xylophone', intent: 'learn' }, options);
-  assert.equal(noEvidence.reason, 'no_evidence');
-  assert.equal(tokenCalls, 0);
+  assert.equal(noEvidence.status, 'chat');
+  assert.equal(tokenCalls, 1);
   const answer = await answerWithRag({ message: 'What is differential privacy?', intent: 'learn' }, options);
   assert.equal(answer.status, 'ok');
-  assert.equal(tokenCalls, 1);
-  assert.equal(model.calls[0].options.headers.authorization, 'Bearer test-access-token');
+  assert.equal(tokenCalls, 2);
+  assert.equal(model.calls[1].options.headers.authorization, 'Bearer test-access-token');
 });
