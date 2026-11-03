@@ -1,0 +1,10 @@
+# Cloud Run only needs these files. Keep local work and credentials out of the build upload.
+*
+!Dockerfile
+!.dockerignore
+!public/
+!public/**
+!server/
+!server/**
+!cloud-run/
+!cloud-run/**
