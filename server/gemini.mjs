@@ -1,5 +1,7 @@
 /** Server-only Vertex AI transport. No API key or provider response is sent to the browser. */
 export const DEFAULT_MODEL = 'gemini-3.5-flash';
+/** A strict subset of the Vertex AI request label value rule: 1-63 lowercase ASCII letters, digits, underscores, dashes. */
+export const BILLING_LABEL_PATTERN = /^[a-z0-9_-]{1,63}$/;
 
 function responseSchema(sourceIds) {
   const grounded = sourceIds.length > 0;
@@ -29,8 +31,9 @@ function responseSchema(sourceIds) {
 }
 
 export async function generateGeminiDraft(prompt, sourceIds, {
-  apiKey, accessTokenProvider, model = DEFAULT_MODEL, projectId, location = 'global', fetchImpl = fetch, onUsage
+  apiKey, accessTokenProvider, model = DEFAULT_MODEL, projectId, location = 'global', billingLabel, fetchImpl = fetch, onUsage
 } = {}) {
+  if (billingLabel !== undefined && (typeof billingLabel !== 'string' || !BILLING_LABEL_PATTERN.test(billingLabel))) throw new Error('Invalid billing label');
   if (!apiKey && (!accessTokenProvider || !projectId)) throw new Error('Missing model credential');
   if (apiKey && typeof apiKey !== 'string') throw new Error('Invalid model credential');
   if (accessTokenProvider && typeof accessTokenProvider !== 'function') throw new Error('Invalid token provider');
@@ -42,6 +45,8 @@ export async function generateGeminiDraft(prompt, sourceIds, {
   const scope = projectId ? `projects/${projectId}/locations/${location}/` : '';
   const url = `https://aiplatform.googleapis.com/v1/${scope}${modelPath}`;
   const request = {
+    // Cloud Billing splits Vertex AI cost by this request label.
+    ...(billingLabel ? { labels: { app: billingLabel } } : {}),
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       thinkingConfig: model.startsWith('gemini-2.5-') ? { thinkingBudget: 1024 } : { thinkingLevel: 'LOW' },

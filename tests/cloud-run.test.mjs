@@ -160,3 +160,40 @@ test('Cloud Run adapter requires a real project ID', () => {
   assert.throws(() => createCloudRunServer({ projectId: '' }), /VERTEX_PROJECT_ID/);
   assert.throws(() => createCloudRunServer({ projectId: '123456' }), /VERTEX_PROJECT_ID/);
 });
+
+test('Cloud Run adapter passes the billing label to the chat handler and refuses a bad one at startup', async () => {
+  const calls = [];
+  const server = createCloudRunServer({
+    projectId: 'valid-project',
+    billingLabel: 'kathleen-chatbot',
+    chatHandler: async (request, options) => { calls.push(options); return Response.json({ status: 'ok' }); }
+  });
+  await withServer(server, async base => {
+    await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  });
+  assert.equal(calls[0].billingLabel, 'kathleen-chatbot');
+  assert.throws(() => createCloudRunServer({ projectId: 'valid-project', billingLabel: 'Kathleen-Chatbot' }), /BILLING_APP_LABEL/);
+  assert.throws(() => createCloudRunServer({ projectId: 'valid-project', billingLabel: 123 }), /BILLING_APP_LABEL/);
+});
+
+test('Cloud Run adapter reads the billing label from BILLING_APP_LABEL and treats an empty value as unset', async () => {
+  const saved = process.env.BILLING_APP_LABEL;
+  const labelFor = async value => {
+    process.env.BILLING_APP_LABEL = value;
+    const calls = [];
+    const server = createCloudRunServer({
+      projectId: 'valid-project',
+      chatHandler: async (request, options) => { calls.push(options); return Response.json({ status: 'ok' }); }
+    });
+    await withServer(server, async base => {
+      await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    });
+    return calls[0].billingLabel;
+  };
+  try {
+    assert.equal(await labelFor('kathleen-chatbot'), 'kathleen-chatbot');
+    assert.equal(await labelFor(''), undefined);
+  } finally {
+    if (saved === undefined) delete process.env.BILLING_APP_LABEL; else process.env.BILLING_APP_LABEL = saved;
+  }
+});

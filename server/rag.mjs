@@ -122,7 +122,7 @@ function validateConversation(draft) {
 }
 
 /** Public-source RAG with deterministic privacy gates and validated citations. */
-export async function answerWithRag(input, { apiKey, accessTokenProvider, model, projectId, location, fetchImpl, reserveModelCall, onUsage } = {}) {
+export async function answerWithRag(input, { apiKey, accessTokenProvider, model, projectId, location, billingLabel, fetchImpl, reserveModelCall, onUsage } = {}) {
   const message = typeof input?.message === 'string' ? input.message.trim().slice(0, MAX_MESSAGE) : '';
   let intent = ['learn', 'choose', 'plan'].includes(input?.intent) ? input.intent : 'learn';
   if (!message) return result('insufficient', 'Please ask a question or describe your use case.', 'empty_message');
@@ -165,7 +165,7 @@ export async function answerWithRag(input, { apiKey, accessTokenProvider, model,
     const draft = await generateGeminiDraft(
       prompt,
       conversation ? [] : hits.map(hit => hit.document.id),
-      { apiKey, accessTokenProvider, model, projectId, location, fetchImpl, onUsage }
+      { apiKey, accessTokenProvider, model, projectId, location, billingLabel, fetchImpl, onUsage }
     );
     const checked = conversation ? validateConversation(draft) : validateDraft(draft, hits, intent === 'learn');
     if (intakeQuestion) {

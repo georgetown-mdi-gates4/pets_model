@@ -314,3 +314,9 @@ test('service identity is requested for conversation and grounded answers after 
   assert.equal(tokenCalls, 2);
   assert.equal(model.calls[1].options.headers.authorization, 'Bearer test-access-token');
 });
+
+test('the billing label reaches the Gemini request body', async () => {
+  const model = recordingModel(() => [{ text: 'Hi! What would you like to explore?', source_ids: [] }]);
+  await answerWithRag({ message: 'hello!', intent: 'learn' }, { apiKey: 'test-key', billingLabel: 'kathleen-chatbot', fetchImpl: model.fetchImpl });
+  assert.deepEqual(model.calls[0].body.labels, { app: 'kathleen-chatbot' });
+});

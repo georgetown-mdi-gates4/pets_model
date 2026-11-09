@@ -82,3 +82,22 @@ test('service identity fails closed when no project or token is available', asyn
   }), /Missing model credential/);
   assert.equal(calls, 1);
 });
+
+test('billing label goes into the Vertex request body only when given, and a bad label is refused before any call', async () => {
+  const bodies = [];
+  const fetchImpl = async (url, options) => {
+    bodies.push(JSON.parse(options.body));
+    return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{
+      text: JSON.stringify({ segments: [{ text: 'A short answer.', source_ids: ['source-one'] }] })
+    }] } }] });
+  };
+  const options = { accessTokenProvider: async () => 'token', projectId: 'pets-model-123', fetchImpl };
+  await generateGeminiDraft('Prompt', ['source-one'], options);
+  await generateGeminiDraft('Prompt', ['source-one'], { ...options, billingLabel: 'kathleen-chatbot' });
+  assert.equal('labels' in bodies[0], false);
+  assert.deepEqual(bodies[1].labels, { app: 'kathleen-chatbot' });
+  for (const bad of ['Kathleen-Chatbot', '', 'a'.repeat(64), 'has space', 'a.b', 123]) {
+    await assert.rejects(generateGeminiDraft('Prompt', ['source-one'], { ...options, billingLabel: bad }), /Invalid billing label/);
+  }
+  assert.equal(bodies.length, 2);
+});
